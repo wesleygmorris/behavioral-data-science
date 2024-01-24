@@ -31,11 +31,11 @@ Y <- X + rnorm(1000)
 
 
 # Define the function. This can be used either for linear or sigmoid activation.
-bootleg_gridsearch <- function(activation, max_num_iters=1000){
+bootleg_gridsearch <- function(activation, max_num_iters=1000, leaning_rate_step=0.1){
   # Set the grid of values that we will search over.
-  learning_rate_range = seq(0, 1, by=0.1)
-  max_iter_range = seq(100, max_num_iters, by=100)
-  total=length(learning_rate_range)*length(max_iter_range)*length(activation_range)
+  learning_rate_range = seq(0, 1, by=leaning_rate_step)
+  max_iter_range = seq(100, max_num_iters, by=500)
+  total=length(learning_rate_range)*length(max_iter_range)
   
   # Initialize the vectors
   learning_rates <- vector()
@@ -45,13 +45,13 @@ bootleg_gridsearch <- function(activation, max_num_iters=1000){
   # Initialize the progress bar
   pb = txtProgressBar(min = 0, max = total, initial = 0) 
   counter = 1
-  total = length(learning_rate_range)*length(max_iter_range)*length(activation_range)
+  total = length(learning_rate_range)*length(max_iter_range)
   
   # Main hyperparameter search loop
   for (lr in learning_rate_range){
     for (mi in max_iter_range){
       setTxtProgressBar(pb,counter)
-      best_result <- glm_gradient_descent(X, Y, learning_rate=lr, max_iter=mi, activation='linear')$best_result
+      best_result <- glm_gradient_descent(X, Y, learning_rate=lr, max_iter=mi, activation=activation)$best_result
       cost <- best_result[2]
       costs[counter] <- cost
       learning_rates[counter] <- lr
@@ -61,7 +61,6 @@ bootleg_gridsearch <- function(activation, max_num_iters=1000){
   }  
   hyperparameter_df <- data.frame(costs=costs, learning_rates=learning_rates, max_iters=max_iters)
   best_one <- hyperparameter_df[which.min(abs(hyperparameter_df$cost)),]
-
   ## Do gradient descent using the best hyperparameters
   gd <- glm_gradient_descent(
     X, Y, 
@@ -84,9 +83,11 @@ bootleg_gridsearch <- function(activation, max_num_iters=1000){
 X <- rnorm(1000, mean = 0, sd = 0.10)
 Y <- X + rnorm(1000)
 
-results <- bootleg_gridsearch('linear', 1000)
+results <- bootleg_gridsearch('linear', 2000)
 print(results$best_result)
 print(coef(lm(Y ~ X)))
+########PERFECT MATCH!############
+
 
 ## Plot the gradient descent
 results_frame <- data.frame(results$results)
@@ -102,10 +103,12 @@ ggplot(results_frame, aes(x=iteration, y=cost)) +
 Y <- categorize(Y, 2) - 1
 # Adjust the parameters of the gradient descent
 # to get near the logistic regression output
-
-results <- bootleg_gridsearch('sigmoid', 5000)
+glm_gradient_descent(X, Y, learning_rate=0.1, max_iter=50000, activation='sigmoid')$best_result
+results <- bootleg_gridsearch('sigmoid', 50000, 0.05)
 print(results$best_result)
 print(coef(glm(Y ~ X, family='binomial')))
+
+#####It took a lot more iterations, but I made it!#####
 
 ## Plot the gradient descent
 results_frame <- data.frame(results$results)
