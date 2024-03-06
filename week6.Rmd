@@ -204,14 +204,4 @@ ggdotchart(
 treeInfo(ranger_model, tree = 1)
 ```
 
-### Extra interpretability
-```{r interpret}
-install.packages('pandoc')
-library(pandoc)
-
-explain_forest(
-  ranger_model, data = schizotypy,
-  path = paste0(getwd(), "/schizotypy_negative")
-)
-```
 
