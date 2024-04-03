@@ -1,0 +1,151 @@
+---
+title: "Week 8 - EGA"
+output: html_notebook
+---
+Wesley Morris
+
+## Load packages
+```{r}
+library(EGAnet); library(psychTools)
+library(lavaan); library(semPlot)
+library(ggplot2)
+```
+
+## Get data
+```{r}
+load("~/GitHub/behavioral-data-science/behavioral-data-science/data/sapa.RData")
+```
+
+# Playing Around
+This first section is just playing around. Please feel free to skip to the next level-one header 'Getting Serious' to see the actual homework.
+
+## Explore Correlations
+
+### Compute Correlations
+```{r}
+correlations <- auto.correlate(sapa)
+```
+
+#### Look at heatmap
+```{r, fig.width = 12, fig.height = 12}
+library(reshape2)
+melted_correlations <- melt(correlations)
+ggplot(data = melted_correlations, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+### Compute Partial Correlations
+```{r}
+partial <- EGAnet:::cor2pcor(correlations)
+```
+
+#### Look at heatmap
+```{r, fig.width = 12, fig.height = 12}
+library(reshape2)
+melted_correlations <- melt(partial)
+ggplot(data = melted_correlations, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Network Analysis
+
+### Perform lasso on the correlation matrix
+```{r}
+network <- network.estimation(sapa, model = "glasso")
+```
+
+### Create a class for easy plotting
+```{r, fig.width = 12, fig.height = 12}
+network_class <- list(
+  network = bfi_network,
+  wc = rep(1, ncol(bfi_network))
+)
+class(network_class) <- "EGA"
+
+plot(network_class) + theme(legend.position = "none", text=element_text(size=2))
+```
+
+### Look at glasso heatmap
+```{r, fig.width = 12, fig.height = 12}
+melted_correlations <- melt(network)
+ggplot(data = melted_correlations, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+## Community Analysis
+
+### Walktrap
+```{r}
+walktrap <- community.detection(bfi_network, algorithm = "walktrap")
+summary(walktrap)
+```
+
+```{r, fig.width = 12, fig.height = 12}
+# Update pseudo-EGA class object
+network_class$wc <- walktrap
+# Plot
+plot(network_class)
+```
+
+### Louvain
+```{r}
+louvain <- community.detection(bfi_network, algorithm = "louvain")
+summary(louvain)
+```
+
+```{r, fig.width = 12, fig.height = 12}
+network_class$wc <- louvain
+plot(network_class)
+```
+
+# Getting Serious
+
+## Trying vanilla EGA
+
+First we will try the basic EGA function. This function has four steps. First, it estimates associations. Next it checks for unidimensionality. If the data are unidimensional, then there is no need for a graph analysis because the single community solution is best. If the data are multidimensional, then the function proceeds to the next step, estimating the network. It does this by using EBICglasso to regularize the correlation matrix. Finally, once our network is estimated, it performs a community algorithm to identify a number of communities within the network. There are two algorithms that we will try:
+
+* **Walktrap** uses hierarchical clustering
+
+* **Louvain** uses gradient ascent, maximizing the gain in modularity by adding nodes to communities
+
+* **Leiden** is like Louvain but better. It can use a number of gain functions, we are going to set it to modularity to copy Louvain.
+
+### Fit and plot
+```{r, fig.width = 12, fig.height = 12}
+walktrap_ega <- EGA(sapa, plot.EGA=TRUE, algorithm="walktrap")
+louvain_ega <- EGA(sapa, plot.EGA=TRUE, algorithm="louvain")
+leiden_ega <- EGA(sapa, plot.EGA=TRUE, algorithm="leiden", objective_function="modularity")
+```
+
+### Summary
+Using the walktrap algorithm we identified eight communities whereas while the louvain and leiden algorithms only identified seven communities. We can compare the two outputs using Total Entropy Fit Index. Lower values represent a better fit. In this case, the louvain algorithm reported a TEFI of -134.996, indicating a better fit than the walktrap algorithm (TEFI = -128.787. As predicted, the leiden algorithm performed the best of all with a TEFI of -136.98.
+```{r}
+walktrap_ega$n.dim
+louvain_ega$n.dim
+leiden_ega$n.dim
+
+walktrap_ega$TEFI
+louvain_ega$TEFI
+leiden_ega$TEFI
+```
+## Using EGA.fit
+Unlike vanilla EGA, the `EGA.fit()` function uses EGA to optimize the function over a number of hyperparameters using TEFI as the loss function. Just as before, we will attempt `EGA.fit()` using the walktrap, louvain, and leiden algorithms. May the best algorithm win!
+
+### Fit and Plot
+```{r, fig.width = 12, fig.height = 12}
+walktrap_fit <- EGA.fit(sapa, algorithm = "walktrap")
+louvain_fit <- EGA.fit(sapa, algorithm = "louvain")
+leiden_fit <- EGA.fit(sapa, algorithm = "leiden", objective_function="modularity")
+```
+### Summary
+All three of the algorithms performed better from `EGA.fit()` than they did with vanilla EGA. The walktrap algorithm showed the greatest rise in performance, improving its TEFI from -128.7868 to -136.5132. The louvain algorithm also improved from -134.996 to -142.3669. Leiden still reigns supreme at -142.7746, up from -136.9801. Interestingly, although leiden was and remains the best algorithm, it had the least improvement from `EGA.fit()`, perhaps because it is already optimized right out of the box. Another interesting development was that the number of dimensions increased for all three algorithms in `EGA.fit()`, to 9, 11, and 10 for walktrap, louvain, and leiden respectively. This might be because a higher number of communities tends to improve TEFI similarly to how fewer restrictions in SEM always improve the model fit. However, this idea is speculative and future research may shed light on this phenomenon.
+
+```{r}
+walktrap_fit$Lowest.EntropyFit
+louvain_fit$Lowest.EntropyFit
+leiden_fit$Lowest.EntropyFit
+```
+
