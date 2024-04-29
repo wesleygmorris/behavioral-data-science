@@ -1,0 +1,241 @@
+---
+title: "UVA for Cluster Analysis"
+output: pdf_document
+date: "2024-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls()) 
+```
+
+# Prepare Environment
+
+```{r, include=FALSE}
+library(EGAnet); library(psychTools); library(ggplot2)
+library(moments); library(tidyverse); library(data.table)
+library(fpc); library(cluster); library(igraph); library(gridExtra)
+
+set.seed(42)
+```
+
+# Pruning data
+Here we will prune the data according to two methods. 
+- The first involves using a manual strategy of pruning based on a correlation table 
+and removing variables that are multicollinear, retaining only the variable most 
+closely correlated to the outcome. This has already been done in `pruning_variables.ipynb`.
+- The second involves using UVA.
+## Read data and take indices
+```{r}
+# This is the dataframe that has already been pruned using the pruner() function in the
+# notebook pruning_variables.ipynb
+man_df <- read.csv('C:\\Users\\morriwg1\\OneDrive - Vanderbilt\\Documents\\vanderbilt\\projects\\writing_styles_cluster\\data\\PERSUADE_NLP_indices_man_pruned.csv')[5:55]
+
+# This is the full set of indices, except for variables that have high incidents of zeros
+# and variables with high skew and kurtosis. See the notebook pruning_variables.ipynb
+UVA_df_original <- read.csv('C:\\Users\\morriwg1\\OneDrive - Vanderbilt\\Documents\\vanderbilt\\projects\\writing_styles_cluster\\data\\PERSUADE_NLP_indices_half_pruned.csv')[5:1020]
+
+# Provide some output
+paste("The full dataframe has", nrow(UVA_df_original), "observations with", ncol(UVA_df_original), "indices")
+```
+## Perform UVA on the dataset
+We perform UVA on the original, using a cutoff of 0.03 for weighted topological
+overlap. This value was chosen to match the number of variables retained using the
+manual method.
+```{r}
+UVA_res <- UVA(UVA_df_original, cut.off=0.03)
+paste("UVA found", ncol(UVA_res$reduced_data), "unique variables.")
+UVA_df <- data.frame(UVA_res$reduced_data)
+```
+```{r}
+library(ggplot2)
+plot1 <- ggplot(data = melt(round(cor(UVA_df),2)), aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile() +
+  theme(axis.text.x=element_blank()) +
+  labs(title='UVA Index Selection')
+plot2 <- ggplot(data = melt(round(cor(man_df),2)), aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  theme(axis.text.x=element_blank())+
+  labs(title='Manual Index Selection')
+
+grid.arrange(plot1, plot2, ncol=2, top='Correlation Matrices for Indices')
+```
+## EGA
+Using Exploratory Graph Analysis to do community detection among both sets of retained
+indices. The goal is to find out whether the communities overlap.
+```{r}
+UVA_EGA <- EGA(UVA_df, plot.EGA=TRUE, algorithm="walktrap")
+man_EGA <- EGA(man_df, plot.EGA=TRUE, algorithm="walktrap")
+```
+
+```{r}
+UVA_dim <- UVA_EGA$dim.variables
+man_dim <- man_EGA$dim.variables
+
+#write.csv(UVA_dim, "~/vanderbilt/projects/writing_styles_cluster/results/UVA_dim.csv")
+#write.csv(man_dim, "~/vanderbilt/projects/writing_styles_cluster/results/man_dim.csv")
+```
+
+```{r}
+plot1 <- UVA_EGA$plot.EGA
+plot2 <- man_EGA$plot.EGA
+grid.arrange(plot1, plot2, ncol=2, top='Exploratory Graph Analysis', left="UVA Indices", right="Manual Indices")
+```
+
+
+
+## Write the UVA pruned dataset to file
+```{r}
+#write.csv(UVA_df, "~/vanderbilt/projects/writing_styles_cluster/data/PERSUADE_NLP_indices_uva_pruned.csv")
+```
+
+# Cluster Analysis
+## Read both indices from file
+
+```{r}
+UVA_df = read.csv("~/vanderbilt/projects/writing_styles_cluster/data/PERSUADE_NLP_indices_uva_pruned.csv")[2:60]
+man_df = read.csv('C:\\Users\\morriwg1\\OneDrive - Vanderbilt\\Documents\\vanderbilt\\projects\\writing_styles_cluster\\data\\index_data.csv')[5:55]
+```
+
+
+## Normalize all columns
+```{r}
+UVA_df <- scale(UVA_df)
+man_df <- scale(man_df)
+```
+
+
+## Find optimal number of clusters
+### UVA dataset
+```{r}
+library(factoextra)
+plot1 <- fviz_nbclust(
+  x = UVA_df, # supply data
+  FUN = kmeans, # cluster function
+  method = "wss", # within-cluster sum of squares
+  k = 10,  # maximum number of clusters
+)
+
+plot2 <- fviz_nbclust(
+  x = UVA_df, # supply data
+  FUN = kmeans, # cluster function
+  method = "silhouette", # within-cluster sum of squares
+  k = 10,  # maximum number of clusters
+)
+
+require(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2, top='Selecting Optimum K for K-Means Using UVA Generated Indices')
+```
+
+### Manual dataset
+```{r}
+library(factoextra)
+plot1 <- fviz_nbclust(
+  x = man_df, # supply data
+  FUN = kmeans, # cluster function
+  method = "wss", # within-cluster sum of squares
+  k = 10,  # maximum number of clusters
+  iter.max=20
+)
+
+plot2 <- fviz_nbclust(
+  x = man_df, # supply data
+  FUN = kmeans, # cluster function
+  method = "silhouette", # within-cluster sum of squares
+  k = 10,  # maximum number of clusters
+  iter.max=20
+)
+
+require(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2, top='Selecting Optimum K for K-Means Using Manually Generated Indices')
+```
+
+## Perform and plot cluster analyses
+```{r}
+UVA_kmeans_4 <- kmeans(UVA_df, centers = 4, iter.max = 40)
+man_kmeans_4 <- kmeans(man_df, centers = 4, iter.max = 40)
+
+
+plot1 <- fviz_cluster(UVA_kmeans_4, data = UVA_df, title="UVA 4 Clusters")
+plot2 <- fviz_cluster(man_kmeans_4, data = man_df, title="Manual 4 Clusters")
+
+require(gridExtra)
+grid.arrange(plot1, plot2, ncol = 2)
+```
+
+```{r}
+man_df <- as.data.frame(man_df)
+man_df$cluster <- man_kmeans_4$cluster
+
+UVA_df <- as.data.frame(UVA_df)
+UVA_df$cluster <- UVA_kmeans_4$cluster
+```
+
+## MANOVA
+The purpose here is to find significant differences in indices between clusters
+
+
+```{r}
+library(MASS)
+library(car)
+man_dat <- sapply(man_df[,1:51], as.numeric)
+man_manova <- manova(man_dat ~ cluster, data=man_df)
+
+UVA_dat <- sapply(UVA_df[,1:59], as.numeric)
+UVA_manova <- manova(UVA_dat ~ cluster, data=UVA_df)
+
+man_man_res <- aov(man_manova)
+UVA_man_res <- aov(UVA_manova)
+
+sum <- summary(UVA_man_res)
+
+
+library(comprehenr)
+
+summarize <- function(sum) {
+  ps <- to_vec(for (i in sum) if (!is.null(i$`Pr(>F)`)) i$`Pr(>F)`)
+  Fs <- to_vec(for (i in sum) if (!is.null(i$`F value`)) i$`F value`)
+  new_df <- data.frame(ps=ps, Fs=Fs)
+  new_df <- new_df[rowSums(is.na(new_df)) == 0,]
+  new_df$Index <- names(sum)
+  return(new_df)
+  }
+
+#write.csv(summarize(summary(UVA_man_res)), "~/vanderbilt/projects/writing_styles_cluster/results/UVA_manova_coef.csv")
+#write.csv(summarize(summary(man_man_res)), "~/vanderbilt/projects/writing_styles_cluster/results/manual_manova_coef.csv")
+```
+
+```{r}
+#write.csv(man_man_res$coefficients, "~/vanderbilt/projects/writing_styles_cluster/results/manual_manova_coef.csv")
+```
+
+## Get mean scores for each index for each cluster
+
+```{r}
+library(dplyr)
+
+
+man_means <- group_by(man_df, cluster) %>%
+  summarise(across(everything(), list(mean)))
+
+UVA_means <- group_by(UVA_df, cluster) %>%
+  summarise(across(everything(), list(mean)))
+
+#write.csv(t(man_means), "~/vanderbilt/projects/writing_styles_cluster/results/mean_man_cluster_scores.csv")
+
+#write.csv(t(UVA_means), "~/vanderbilt/projects/writing_styles_cluster/results/mean_UAV_cluster_score.csv")
+```
+
+## Check similarity indices
+```{r}
+compare(
+  man_df$cluster, UVA_df$cluster,
+  method = "adjusted.rand"
+)
+
+## Normalized Mutual Information
+compare(
+  man_df$cluster, UVA_df$cluster,
+  method = "nmi"
+)
+```
